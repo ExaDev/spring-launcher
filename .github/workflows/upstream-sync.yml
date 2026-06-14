@@ -1,0 +1,84 @@
+# Keep this fork current with its upstream. Two phases:
+#   1. Fast-forward the mirror branch (master) to upstream — always safe, it
+#      carries none of our work.
+#   2. Merge the mirror into our patched work branch. A clean merge is pushed
+#      automatically; a conflicting one opens a standing PR for manual
+#      resolution instead of clobbering our patches.
+name: Upstream sync
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: upstream-sync
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: beyond-all-reason/spring-launcher
+  MIRROR_BRANCH: master
+  WORK_BRANCH: main
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout work branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.WORK_BRANCH }}
+          fetch-depth: 0
+
+      - name: Fast-forward mirror branch to upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh repo sync "${GITHUB_REPOSITORY}" \
+            --branch "${MIRROR_BRANCH}" --source "${UPSTREAM}"
+
+      - name: Auto-merge upstream into work branch (clean only)
+        id: merge
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "${MIRROR_BRANCH}"
+          BEFORE="$(git rev-parse HEAD)"
+          if git merge --no-edit "origin/${MIRROR_BRANCH}"; then
+            AFTER="$(git rev-parse HEAD)"
+            if [ "$BEFORE" = "$AFTER" ]; then
+              echo "Already up to date with ${MIRROR_BRANCH}."
+              echo "result=unchanged" >> "$GITHUB_OUTPUT"
+            else
+              git push origin "HEAD:${WORK_BRANCH}"
+              echo "Merged upstream cleanly and pushed."
+              echo "result=merged" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            git merge --abort
+            echo "::warning::Upstream merge into ${WORK_BRANCH} conflicts; opening a resolution PR."
+            echo "result=conflict" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Open resolution PR on conflict
+        if: steps.merge.outputs.result == 'conflict'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          EXISTING="$(gh pr list --repo "${GITHUB_REPOSITORY}" --state open \
+            --base "${WORK_BRANCH}" --head "${MIRROR_BRANCH}" --json number --jq 'length')"
+          if [ "$EXISTING" = "0" ]; then
+            gh pr create --repo "${GITHUB_REPOSITORY}" \
+              --base "${WORK_BRANCH}" --head "${MIRROR_BRANCH}" \
+              --title "Sync upstream into ${WORK_BRANCH}" \
+              --body "Automated upstream sync hit conflicts. Merge \`${MIRROR_BRANCH}\` (now level with ${UPSTREAM}) into \`${WORK_BRANCH}\` and resolve here."
+          else
+            echo "Resolution PR already open."
+          fi
