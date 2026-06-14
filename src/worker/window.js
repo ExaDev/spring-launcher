@@ -8,7 +8,13 @@ let workerWindow;
 app.prependListener('ready', () => {
 	workerWindow = new BrowserWindow({
 		show: false,
-		webPreferences: {nodeIntegration: true }
+		// contextIsolation defaults to true in modern Electron, which disables
+		// require() in the renderer even with nodeIntegration on. The worker's
+		// index.html does `require('./main')`, so it must be off (matches the
+		// main window). Without this the download worker throws "require is not
+		// defined" and the spring<->launcher download bridge never services map
+		// downloads (they sit at "connecting").
+		webPreferences: { nodeIntegration: true, contextIsolation: false }
 	});
 	workerWindow.loadFile(`${__dirname}/index.html`);
 
