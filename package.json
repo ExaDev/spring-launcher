@@ -12,6 +12,7 @@
     "build-linux": "electron-builder -l",
     "build-win": "electron-builder -w",
     "build-win-portable": "electron-builder -w portable",
+    "build-mac": "electron-builder -m",
     "build": "electron-builder -wl"
   },
   "author": "BAR Team",
@@ -25,6 +26,24 @@
       "!bin/**"
     ],
     "artifactName": "${productName}-${version}.${ext}",
+    "asarUnpack": [
+      "node_modules/7zip-bin/**"
+    ],
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "category": "public.app-category.games",
+      "identity": null
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-mac-arm64.${ext}"
+    },
     "linux": {
       "target": "AppImage",
       "category": "Game",
