@@ -131,11 +131,34 @@ function normaliseEngineLayout(versionDir) {
 	throw new Error(`Engine binary '${springBin}' not found in extracted tree at ${versionDir}`);
 }
 
+// After the engine is in place, point pr-downloader at the engine's bundled
+// copy (the flattened bin/ leaves it next to spring). prd_downloader reads
+// springPlatform.prDownloaderPath dynamically at call time, so setting it here
+// lets the later game-download step fetch byar/byar-chobby on macOS without
+// bundling a separate pr-downloader (bar-lobby never fetches the chobby menu).
+function wirePrDownloader(versionDir) {
+	const prd = path.join(versionDir, 'pr-downloader');
+	if (fs.existsSync(prd)) {
+		try { fs.chmodSync(prd, 0o755); } catch (e) { /* best effort */ }
+		springPlatform.prDownloaderPath = prd;
+		log.info(`macOS pr-downloader wired: ${prd}`);
+	} else {
+		log.warn(`pr-downloader not found in engine tree at ${prd}; game downloads will fail`);
+	}
+}
+
 class GitHubEngineDownloader {
 	// versionHint is the value from config.downloads.engines[] (e.g. the
 	// sentinel "engine-macos-arm64-latest"). It is only a trigger; the real tag
 	// comes from the releases API.
 	async downloadEngine(versionHint) {
+		// Emit 'started' SYNCHRONOUSLY before the async release resolution, so the
+		// wizard registers the engine download as in-progress and waits for its
+		// 'finished' before advancing to the games step. Without this, the async
+		// resolveLatestRelease() gap lets the games step run before pr-downloader
+		// is wired (it is wired only after the engine is in place), and the game
+		// download fails with "pr-downloader is not available".
+		httpDownloader.emit('started', versionHint);
 		log.info(`Resolving macOS engine from GitHub (hint: ${versionHint})`);
 
 		let tag;
@@ -148,8 +171,15 @@ class GitHubEngineDownloader {
 			return;
 		}
 
-		const destinationRel = path.join(ENGINE_SUBDIR, tag);
+		// Install into the dir named by the sentinel from config.downloads.engines
+		// (the versionHint), NOT the resolved tag: the launch step falls back to
+		// engine/<config.downloads.engines[0]>/spring when config.launch.engine_path
+		// is unset (e.g. cleared by a config reload), so the dir name must match
+		// the sentinel for the launch to find the binary. assetUrl still points at
+		// the real release; only the local dir name is stabilised.
+		const destinationRel = path.join(ENGINE_SUBDIR, versionHint);
 		const versionDir = path.join(springPlatform.writePath, destinationRel);
+		log.info(`macOS engine ${tag} -> install dir ${versionDir}`);
 		const springBinPath = path.join(versionDir, springPlatform.springBin);
 
 		// Idempotency: if the engine binary already exists, skip download and
@@ -157,6 +187,7 @@ class GitHubEngineDownloader {
 		if (fs.existsSync(springBinPath)) {
 			log.info(`macOS engine already installed at ${versionDir}, skipping download`);
 			config.launch.engine_path = springBinPath;
+			wirePrDownloader(versionDir);
 			httpDownloader.emit('finished', versionHint);
 			return;
 		}
@@ -186,6 +217,7 @@ class GitHubEngineDownloader {
 				return;
 			}
 			config.launch.engine_path = springBinPath;
+			wirePrDownloader(versionDir);
 			log.info(`macOS engine ready at ${springBinPath}`);
 		};
 		httpDownloader.on('finished', onFinished);

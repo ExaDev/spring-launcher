@@ -301,7 +301,7 @@ const proxy = new Proxy({
 	get: function (target, name) {
 		if (target[name] != undefined) {
 			return target[name];
-		} else if (currentConfig[name] != undefined) {
+		} else if (currentConfig != null && currentConfig[name] != undefined) {
 			return currentConfig[name];
 		}
 		return configFile[name];
