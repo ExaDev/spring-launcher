@@ -182,23 +182,29 @@ class GitHubEngineDownloader {
 		const versionDir = path.join(springPlatform.writePath, destinationRel);
 		log.info(`macOS engine ${tag} -> install dir ${versionDir}`);
 		const springBinPath = path.join(versionDir, springPlatform.springBin);
+		// The dir name is the stable sentinel, so record the real resolved tag in
+		// a sidecar to detect engine updates (otherwise skip-if-exists would pin
+		// users to whatever engine they first downloaded).
+		const tagFile = path.join(versionDir, '.engine-tag');
+		const installedTag = fs.existsSync(tagFile)
+			? fs.readFileSync(tagFile, 'utf8').trim()
+			: null;
 
-		// Idempotency: if the engine binary already exists, skip download and
-		// just point the launch config at it.
-		if (fs.existsSync(springBinPath)) {
-			log.info(`macOS engine already installed at ${versionDir}, skipping download`);
+		// Idempotency: skip only if the installed engine is the current binary AND
+		// matches the latest resolved tag.
+		if (fs.existsSync(springBinPath) && installedTag === tag) {
+			log.info(`macOS engine ${tag} already installed, skipping download`);
 			config.launch.engine_path = springBinPath;
 			mergeEngineGameContent(versionDir);
 			httpDownloader.emit('finished', versionHint);
 			return;
 		}
 
-		// If the version dir exists but the binary does not, a previous attempt
-		// was interrupted before normalisation. http_downloader short-circuits
-		// when the destination dir exists, so remove the stale partial tree to
-		// force a clean re-download rather than silently reusing it.
+		// Either an interrupted prior attempt (binary missing) or an outdated
+		// engine (installed tag != latest). Remove the stale tree so http_downloader
+		// (which short-circuits when the destination exists) does a clean fetch.
 		if (fs.existsSync(versionDir)) {
-			log.warn(`Removing incomplete engine dir before re-download: ${versionDir}`);
+			log.info(`Refreshing macOS engine (installed=${installedTag || 'none'}, latest=${tag})`);
 			fs.rmSync(versionDir, { recursive: true, force: true });
 		}
 
@@ -219,7 +225,12 @@ class GitHubEngineDownloader {
 			}
 			config.launch.engine_path = springBinPath;
 			mergeEngineGameContent(versionDir);
-			log.info(`macOS engine ready at ${springBinPath}`);
+			try {
+				fs.writeFileSync(tagFile, tag, 'utf8');
+			} catch (e) {
+				log.warn(`Could not write engine tag sidecar: ${e}`);
+			}
+			log.info(`macOS engine ${tag} ready at ${springBinPath}`);
 		};
 		httpDownloader.on('finished', onFinished);
 
