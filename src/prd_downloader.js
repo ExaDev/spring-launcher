@@ -18,32 +18,6 @@ class PrdDownloader extends EventEmitter {
 		let finished = false;
 
 		if (springPlatform.prDownloaderPath === null) {
-			// On macOS pr-downloader is not bundled; it ships inside the engine,
-			// which github_engine_downloader fetches and wires up. The games step
-			// can begin before the engine download finishes, so wait for the path
-			// to be wired (the engine download is already in progress) rather than
-			// failing the game download outright.
-			if (process.platform === 'darwin') {
-				const PRD_WAIT_TIMEOUT_MS = 5 * 60 * 1000;
-				const PRD_POLL_MS = 1000;
-				const startWait = Date.now();
-				const poll = () => {
-					if (springPlatform.prDownloaderPath !== null) {
-						this.downloadPackage(name, args);
-						return;
-					}
-					if (Date.now() - startWait > PRD_WAIT_TIMEOUT_MS) {
-						this.emit('failed', name,
-							'Engine (which provides pr-downloader) did not become ready ' +
-							'in time; cannot download game content.');
-						return;
-					}
-					setTimeout(poll, PRD_POLL_MS);
-				};
-				log.info(`pr-downloader not wired yet; waiting for the engine download before fetching ${name}`);
-				setTimeout(poll, PRD_POLL_MS);
-				return;
-			}
 			this.emit('failed', name,
 				'pr-downloader is not available on this platform.');
 			return;

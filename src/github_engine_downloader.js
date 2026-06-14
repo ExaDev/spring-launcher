@@ -131,19 +131,27 @@ function normaliseEngineLayout(versionDir) {
 	throw new Error(`Engine binary '${springBin}' not found in extracted tree at ${versionDir}`);
 }
 
-// After the engine is in place, point pr-downloader at the engine's bundled
-// copy (the flattened bin/ leaves it next to spring). prd_downloader reads
-// springPlatform.prDownloaderPath dynamically at call time, so setting it here
-// lets the later game-download step fetch byar/byar-chobby on macOS without
-// bundling a separate pr-downloader (bar-lobby never fetches the chobby menu).
-function wirePrDownloader(versionDir) {
-	const prd = path.join(versionDir, 'pr-downloader');
-	if (fs.existsSync(prd)) {
-		try { fs.chmodSync(prd, 0o755); } catch (e) { /* best effort */ }
-		springPlatform.prDownloaderPath = prd;
-		log.info(`macOS pr-downloader wired: ${prd}`);
-	} else {
-		log.warn(`pr-downloader not found in engine tree at ${prd}; game downloads will fail`);
+// Copy the base content the engine ships under game/ (fonts + base sdz) into the
+// data dir, where spring looks for them. Without this spring exits with code 21
+// (Failed to load FontFile 'fonts/FreeSansBold.otf'). Mirrors what bar-lobby's
+// macOS installer does. Idempotent.
+function mergeEngineGameContent(versionDir) {
+	const gameDir = path.join(versionDir, 'game');
+	if (!fs.existsSync(gameDir)) {
+		return;
+	}
+	const writePath = springPlatform.writePath;
+	for (const sub of ['fonts', 'games']) {
+		const src = path.join(gameDir, sub);
+		if (!fs.existsSync(src)) {
+			continue;
+		}
+		const dst = path.join(writePath, sub);
+		fs.mkdirSync(dst, { recursive: true });
+		for (const entry of fs.readdirSync(src)) {
+			fs.cpSync(path.join(src, entry), path.join(dst, entry), { recursive: true, force: true });
+		}
+		log.info(`Merged engine ${sub}/ into ${dst}`);
 	}
 }
 
@@ -152,13 +160,6 @@ class GitHubEngineDownloader {
 	// sentinel "engine-macos-arm64-latest"). It is only a trigger; the real tag
 	// comes from the releases API.
 	async downloadEngine(versionHint) {
-		// Emit 'started' SYNCHRONOUSLY before the async release resolution, so the
-		// wizard registers the engine download as in-progress and waits for its
-		// 'finished' before advancing to the games step. Without this, the async
-		// resolveLatestRelease() gap lets the games step run before pr-downloader
-		// is wired (it is wired only after the engine is in place), and the game
-		// download fails with "pr-downloader is not available".
-		httpDownloader.emit('started', versionHint);
 		log.info(`Resolving macOS engine from GitHub (hint: ${versionHint})`);
 
 		let tag;
@@ -187,7 +188,7 @@ class GitHubEngineDownloader {
 		if (fs.existsSync(springBinPath)) {
 			log.info(`macOS engine already installed at ${versionDir}, skipping download`);
 			config.launch.engine_path = springBinPath;
-			wirePrDownloader(versionDir);
+			mergeEngineGameContent(versionDir);
 			httpDownloader.emit('finished', versionHint);
 			return;
 		}
@@ -217,7 +218,7 @@ class GitHubEngineDownloader {
 				return;
 			}
 			config.launch.engine_path = springBinPath;
-			wirePrDownloader(versionDir);
+			mergeEngineGameContent(versionDir);
 			log.info(`macOS engine ready at ${springBinPath}`);
 		};
 		httpDownloader.on('finished', onFinished);

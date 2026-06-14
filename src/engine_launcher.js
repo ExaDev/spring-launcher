@@ -200,6 +200,11 @@ class Launcher extends EventEmitter {
 			// wired up at launch (KosmicKrisp ICD, optional Zink). Mirror
 			// bar-lobby's launch env.
 			spawnEnv = buildMacOsEngineEnv(engineDir, process.env);
+			// Under --isolation spring reads from the write-dir and SPRING_DATADIR.
+			// The base content merged from the engine (fonts/, games/*.sdz) lives in
+			// writePath, so point SPRING_DATADIR there or spring exits 21
+			// ("Failed to load FontFile FreeSansBold.otf"). Mirrors bar-lobby.
+			spawnEnv.SPRING_DATADIR = resolve(springPlatform.writePath);
 		}
 
 		log.info(`Launching Spring with command: ${enginePath} ${args.join(' ')}`);

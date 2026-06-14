@@ -75,11 +75,12 @@ if (platformName === 'win32') {
 	prDownloaderBin = 'pr-downloader';
 	exports.springBin = 'spring';
 } else if (platformName === 'darwin') {
-	// pr-downloader is not shipped on macOS; the engine is fetched from the
-	// ExaDev/RecoilEngine GitHub releases via github_engine_downloader.js and
-	// content is expected to be pre-seeded by bar-lobby. prDownloaderBin stays
-	// null so prDownloaderPath is left null and any prd call fails loudly.
-	prDownloaderBin = null;
+	// Bundle the patched pr-downloader, same as win/linux. The macOS binary is
+	// self-contained (links only system libs) and is our HTTP/1.1 fork, so the
+	// game-download path is uniform across platforms and available at load (no
+	// engine-download dependency). The engine itself is still fetched from the
+	// ExaDev/RecoilEngine releases by github_engine_downloader.js.
+	prDownloaderBin = 'pr-downloader';
 	exports.springBin = 'spring';
 } else {
 	log.error(`Unsupported platform: ${platformName}`);
