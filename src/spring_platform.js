@@ -74,14 +74,25 @@ if (platformName === 'win32') {
 } else if (platformName === 'linux') {
 	prDownloaderBin = 'pr-downloader';
 	exports.springBin = 'spring';
+} else if (platformName === 'darwin') {
+	// pr-downloader is not shipped on macOS; the engine is fetched from the
+	// ExaDev/RecoilEngine GitHub releases via github_engine_downloader.js and
+	// content is expected to be pre-seeded by bar-lobby. prDownloaderBin stays
+	// null so prDownloaderPath is left null and any prd call fails loudly.
+	prDownloaderBin = null;
+	exports.springBin = 'spring';
 } else {
 	log.error(`Unsupported platform: ${platformName}`);
 	process.exit(-1);
 }
 
-exports.prDownloaderPath = path.resolve(`${__dirname}/../bin/${prDownloaderBin}`);
-if (!existsSync(exports.prDownloaderPath)) {
-	exports.prDownloaderPath = path.resolve(`${process.resourcesPath}/../bin/${prDownloaderBin}`);
+if (prDownloaderBin !== null) {
+	exports.prDownloaderPath = path.resolve(`${__dirname}/../bin/${prDownloaderBin}`);
+	if (!existsSync(exports.prDownloaderPath)) {
+		exports.prDownloaderPath = path.resolve(`${process.resourcesPath}/../bin/${prDownloaderBin}`);
+	}
+} else {
+	exports.prDownloaderPath = null;
 }
 
 exports.writePath = writePath;

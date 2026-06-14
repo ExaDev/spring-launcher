@@ -17,6 +17,17 @@ class PrdDownloader extends EventEmitter {
 	downloadPackage(name, args) {
 		let finished = false;
 
+		if (springPlatform.prDownloaderPath === null) {
+			// On platforms where pr-downloader is not shipped (macOS), content
+			// must be pre-seeded by bar-lobby. Fail loudly rather than crashing
+			// on existsSync(null).
+			this.emit('failed', name,
+				'pr-downloader is not available on this platform. Maps and games ' +
+				'must be downloaded by the Beyond All Reason lobby; the launcher ' +
+				'cannot fetch them on macOS.');
+			return;
+		}
+
 		if (!fs.existsSync(springPlatform.prDownloaderPath)) {
 			if (process.platform == 'win32') {
 				this.emit('failed', name,

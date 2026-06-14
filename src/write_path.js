@@ -22,6 +22,15 @@ function resolveWritePath(title) {
 		}
 	}
 
+	if (platformName === 'darwin') {
+		// Share content with bar-lobby: both apps point at
+		// ~/Library/Application Support/BeyondAllReason/assets so engine,
+		// pool/, maps/ and games/ live in one tree and are not duplicated.
+		// The title is deliberately ignored here for content sharing.
+		const homeDir = process.env.HOME || require('os').homedir();
+		return path.join(homeDir, 'Library', 'Application Support', 'BeyondAllReason', 'assets');
+	}
+
 	const oldDir = path.join(app.getPath('documents'), title);
 	if (fs.existsSync(oldDir)) {
 		return oldDir;
