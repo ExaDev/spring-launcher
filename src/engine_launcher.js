@@ -12,6 +12,7 @@ const log = require('electron-log');
 const springPlatform = require('./spring_platform');
 const { config } = require('./launcher_config');
 const { springsettings } = require('./springsettings');
+const { buildMacOsEngineEnv } = require('./macos_engine_env');
 
 const { bridge } = require('./spring_bridge');
 let address;
@@ -187,9 +188,23 @@ class Launcher extends EventEmitter {
 			return;
 		}
 
+		// The engine resolves its own dylibs and bundled data relative to its
+		// working directory, so cwd must be the engine version directory (the
+		// dir holding the binary). This matters on macOS for the Mesa/Vulkan
+		// stack; it is harmless elsewhere.
+		const engineDir = path.dirname(enginePath);
+
+		let spawnEnv = process.env;
+		if (process.platform === 'darwin') {
+			// The patched Recoil engine on macOS needs its Mesa/Vulkan stack
+			// wired up at launch (KosmicKrisp ICD, optional Zink). Mirror
+			// bar-lobby's launch env.
+			spawnEnv = buildMacOsEngineEnv(engineDir, process.env);
+		}
+
 		log.info(`Launching Spring with command: ${enginePath} ${args.join(' ')}`);
 		const spring = spawn(enginePath, args,
-			{ stdio: outputMode, stderr: outputMode, windowsHide: false, detached: true });
+			{ stdio: outputMode, stderr: outputMode, windowsHide: false, detached: true, env: spawnEnv, cwd: engineDir });
 
 		this.state = 'running';
 
