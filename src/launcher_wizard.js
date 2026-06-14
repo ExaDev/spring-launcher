@@ -109,7 +109,14 @@ class Wizard extends EventEmitter {
 					item: engine,
 					action: () => {
 						this.isActive = true;
-						springDownloader.downloadEngine(engine);
+						if (process.platform === 'darwin') {
+							// The macOS arm64 engine is not on the rapid CDN; fetch
+							// it from the ExaDev/RecoilEngine GitHub releases. The
+							// engine value here is a trigger/version hint.
+							springDownloader.downloadEngineGitHub(engine);
+						} else {
+							springDownloader.downloadEngine(engine);
+						}
 					}
 				});
 			});
@@ -181,6 +188,12 @@ class Wizard extends EventEmitter {
 				log.info('Development version: no self-update required');
 			} else if (argv.disableLauncherUpdate) {
 				log.info('Launcher application update disabled on command line');
+			} else if (process.platform === 'darwin') {
+				// The macOS build is ad-hoc signed (identity: null), so
+				// Squirrel.Mac self-update is non-functional and would only emit
+				// confusing runtime errors. Skip the self-update step until the
+				// app is notarised and a GitHub publish provider is configured.
+				log.info('Launcher self-update skipped on macOS (ad-hoc signed build)');
 			} else {
 				const asyncLauncherUpdateCheck = {
 					promise: null,

@@ -82,6 +82,7 @@ class Extractor extends EventEmitter {
 	getExtractor(url) {
 		const isZip = url.href.endsWith('.zip');
 		const is7z = url.href.endsWith('.7z');
+		const isTarGz = url.href.endsWith('.tar.gz') || url.href.endsWith('.tgz');
 		if (isZip) {
 			log.info('Extracting as .zip file.');
 			return new ExtractorZip();
@@ -89,10 +90,51 @@ class Extractor extends EventEmitter {
 			log.info('Extracting as .7z file.');
 			log.info(`Path to 7zip: ${path7za}`);
 			return new Extractor7Zip();
+		} else if (isTarGz) {
+			log.info('Extracting as .tar.gz file.');
+			return new ExtractorTar();
 		} else {
 			log.warn(`Unknown archive format: ${url}. Assuming it's a zip file.`);
 			return new ExtractorZip();
 		}
+	}
+}
+
+
+// Extracts .tar.gz / .tgz archives using the system tar, which is always present
+// on macOS (/usr/bin/tar) and Linux. Used for the ExaDev/RecoilEngine release
+// tarballs, which ship as .tar.gz rather than .zip or .7z.
+class ExtractorTar extends EventEmitter {
+	extract(source, destination) {
+		const { spawn } = require('child_process');
+		log.info(`Extracting (tar) ${source} to ${destination}...`);
+		try {
+			fs.mkdirSync(destination, { recursive: true });
+		} catch (err) {
+			this.emit('failed', err);
+			return;
+		}
+
+		const tar = spawn('/usr/bin/tar', ['-xzf', source, '-C', destination]);
+
+		let stderr = '';
+		tar.stderr.on('data', (data) => {
+			stderr += data.toString();
+		});
+
+		tar.on('close', (code) => {
+			if (code === 0) {
+				this.emit('finished');
+			} else {
+				const err = new Error(`tar exited with code ${code}`);
+				err.stderr = stderr;
+				this.emit('failed', err);
+			}
+		});
+
+		tar.on('error', (err) => {
+			this.emit('failed', err);
+		});
 	}
 }
 

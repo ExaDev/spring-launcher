@@ -5,6 +5,7 @@ const EventEmitter = require('events');
 const { log } = require('./spring_log');
 const prdDownloader = require('./prd_downloader');
 const httpDownloader = require('./http_downloader');
+const githubEngineDownloader = require('./github_engine_downloader');
 
 class SpringDownloader extends EventEmitter {
 	constructor() {
@@ -49,6 +50,14 @@ class SpringDownloader extends EventEmitter {
 	downloadEngine(engineName) {
 		this.setDownloader(prdDownloader);
 		prdDownloader.downloadEngine(engineName);
+	}
+
+	// macOS engine download path: fetches the Recoil engine from the
+	// ExaDev/RecoilEngine GitHub releases instead of the rapid CDN, delegating
+	// to the http downloader for the actual transfer and extraction.
+	downloadEngineGitHub(versionHint) {
+		this.setDownloader(httpDownloader);
+		githubEngineDownloader.downloadEngine(versionHint);
 	}
 
 	downloadGames(gameNames) {
