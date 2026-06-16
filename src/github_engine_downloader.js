@@ -129,7 +129,7 @@ async function resolveReleaseForVersion(version) {
 		const asset = findTarAsset(release);
 		if (asset != null) {
 			log.info(`Resolved engine release ${release.tag_name} for version ${version}, asset ${asset.name}`);
-			return { tag: release.tag_name, assetUrl: asset.browser_download_url };
+			return { tag: release.tag_name, assetUrl: asset.browser_download_url, assetName: asset.name };
 		}
 		log.warn(`Release ${release.tag_name} matches version ${version} but has no .tar.gz asset, skipping`);
 	}
@@ -160,7 +160,7 @@ async function resolveLatestRelease(releases) {
 		const asset = findTarAsset(release);
 		if (asset != null) {
 			log.info(`Resolved latest engine release ${release.tag_name}, asset ${asset.name}`);
-			return { tag: release.tag_name, assetUrl: asset.browser_download_url };
+			return { tag: release.tag_name, assetUrl: asset.browser_download_url, assetName: asset.name };
 		}
 		log.warn(`Release ${release.tag_name} has no .tar.gz asset, skipping`);
 	}
@@ -267,11 +267,12 @@ class GitHubEngineDownloader {
 
 		let tag;
 		let assetUrl;
+		let assetName;
 		try {
 			if (isLegacySentinel(versionHint)) {
-				({ tag, assetUrl } = await resolveLatestRelease());
+				({ tag, assetUrl, assetName } = await resolveLatestRelease());
 			} else {
-				({ tag, assetUrl } = await resolveReleaseForVersion(versionHint));
+				({ tag, assetUrl, assetName } = await resolveReleaseForVersion(versionHint));
 			}
 		} catch (error) {
 			log.error(`Failed to resolve macOS engine release: ${error}`);
@@ -288,17 +289,20 @@ class GitHubEngineDownloader {
 		const versionDir = path.join(springPlatform.writePath, destinationRel);
 		log.info(`macOS engine ${tag} -> install dir ${versionDir}`);
 		const springBinPath = path.join(versionDir, springPlatform.springBin);
-		// The dir name is the stable sentinel, so record the real resolved tag in
-		// a sidecar to detect engine updates (otherwise skip-if-exists would pin
-		// users to whatever engine they first downloaded).
+		// Record the resolved ASSET NAME (not just the release tag) in the sidecar.
+		// The asset name encodes both the release tag and the GPU variant
+		// (e.g. ...-g<sha>.tar.gz for KosmicKrisp vs ...-g<sha>-moltenvk.tar.gz),
+		// so it changes when a new build is published OR when the OS now prefers a
+		// different variant (e.g. after a macOS 26 upgrade). Comparing it forces a
+		// re-fetch of the correct variant on an OS change, not just on a new build.
 		const tagFile = path.join(versionDir, '.engine-tag');
-		const installedTag = fs.existsSync(tagFile)
+		const installedAsset = fs.existsSync(tagFile)
 			? fs.readFileSync(tagFile, 'utf8').trim()
 			: null;
 
 		// Idempotency: skip only if the installed engine is the current binary AND
-		// the sidecar tag matches the resolved release tag.
-		if (fs.existsSync(springBinPath) && installedTag === tag) {
+		// the sidecar matches the resolved asset (same release tag and variant).
+		if (fs.existsSync(springBinPath) && installedAsset === assetName) {
 			log.info(`macOS engine ${tag} already installed at ${versionDir}, skipping download`);
 			config.launch.engine_path = springBinPath;
 			mergeEngineGameContent(versionDir);
@@ -311,7 +315,7 @@ class GitHubEngineDownloader {
 		// http_downloader (which short-circuits when the destination exists) does a
 		// clean fetch.
 		if (fs.existsSync(versionDir)) {
-			log.info(`Refreshing macOS engine at ${versionDir} (installed=${installedTag || 'none'}, resolved=${tag})`);
+			log.info(`Refreshing macOS engine at ${versionDir} (installed=${installedAsset || 'none'}, resolved=${assetName})`);
 			fs.rmSync(versionDir, { recursive: true, force: true });
 		}
 
@@ -333,7 +337,7 @@ class GitHubEngineDownloader {
 			config.launch.engine_path = springBinPath;
 			mergeEngineGameContent(versionDir);
 			try {
-				fs.writeFileSync(tagFile, tag, 'utf8');
+				fs.writeFileSync(tagFile, assetName, 'utf8');
 			} catch (e) {
 				log.warn(`Could not write engine tag sidecar: ${e}`);
 			}
