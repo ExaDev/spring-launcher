@@ -2,6 +2,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const got = require('got');
 
 const { log } = require('./spring_log');
@@ -56,17 +57,42 @@ async function fetchReleases() {
 	return releases;
 }
 
-// Extract the .tar.gz asset from a release object.
-// Returns the asset object, or null if none is present.
+// The GPU engine ships in two variants per release: the default KosmicKrisp
+// build (renders via Metal 4, macOS 26+) and a "-moltenvk" build (renders via
+// MoltenVK, pre-26). macOS 26 is Darwin 25, so Darwin < 25 must take MoltenVK.
+function prefersMoltenVK() {
+	if (process.platform !== 'darwin') return false;
+	const major = parseInt(os.release(), 10);
+	return Number.isFinite(major) && major < 25;
+}
+
+function isMoltenVKAsset(asset) {
+	return asset.name.endsWith('-moltenvk.tar.gz') || asset.name.endsWith('-moltenvk.tgz');
+}
+
+// Pick the engine tarball asset matching this OS's GPU variant, falling back to
+// the other variant if the preferred one is absent (a release may carry only
+// one). Returns the asset object, or null if the release has no tarball.
 function findTarAsset(release) {
-	const assets = Array.isArray(release.assets) ? release.assets : [];
-	return assets.find(
+	const assets = (Array.isArray(release.assets) ? release.assets : []).filter(
 		a =>
 			a != null &&
 			typeof a.name === 'string' &&
-			(a.name.endsWith('.tar.gz') || a.name.endsWith('.tgz')) &&
-			typeof a.browser_download_url === 'string'
-	) || null;
+			typeof a.browser_download_url === 'string' &&
+			(a.name.endsWith('.tar.gz') || a.name.endsWith('.tgz'))
+	);
+	if (assets.length === 0) {
+		return null;
+	}
+	const wantMoltenVK = prefersMoltenVK();
+	const preferred = assets.find(a => isMoltenVKAsset(a) === wantMoltenVK);
+	const chosen = preferred || assets[0];
+	if (preferred == null) {
+		log.warn(`No ${wantMoltenVK ? 'MoltenVK (pre-26)' : 'KosmicKrisp (26+)'} engine asset on ${release.tag_name}; falling back to ${chosen.name}`);
+	} else {
+		log.info(`Selected ${wantMoltenVK ? 'MoltenVK (pre-26)' : 'KosmicKrisp (26+)'} engine asset: ${chosen.name}`);
+	}
+	return chosen;
 }
 
 // Return true if release is a published (non-draft, non-prerelease) engine
